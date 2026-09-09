@@ -20,3 +20,6 @@ test_*
 *.html
 *.png
 
+# Cloud Agent environment configuration (must be tracked despite *.json above)
+!.cursor/environment.json
+

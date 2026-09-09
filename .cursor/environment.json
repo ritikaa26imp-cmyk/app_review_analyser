@@ -1,0 +1,4 @@
+{
+  "name": "Groww Weekly Pulse Multi-Agent System",
+  "install": "bash .cursor/install.sh"
+}
