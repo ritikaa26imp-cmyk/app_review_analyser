@@ -61,6 +61,13 @@ Open **http://127.0.0.1:8000** in your browser.
 
 Speech uses the **Web Speech API** in your browser (free, no API keys). Mic access may ask for permission once. Recognition works best in Chromium-based browsers.
 
+### Mic not working?
+
+1. Use **Chrome or Edge** (Firefox often cannot listen).
+2. Open Flora at **http://127.0.0.1:8000** (not a LAN IP / random host).
+3. When prompted, click **Allow** for the microphone (or: lock icon near the URL → Site settings → Microphone → Allow).
+4. Stay **online** — Chrome/Edge speech-to-text uses a browser cloud service (still free; no Flora API key). Hearing Flora aloud works offline.
+
 ## Memory
 
 Flora stores short facts (name, goals, preferences, and so on) in a local SQLite file at `data/flora.db`. Nothing is uploaded. You can forget individual facts or clear everything from the side panel.

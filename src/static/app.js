@@ -215,23 +215,64 @@
     }
   }
 
+  function micErrorMessage(code) {
+    switch (code) {
+      case "not-allowed":
+      case "service-not-allowed":
+        return "Microphone blocked. Allow mic access for this site in the browser address bar, then try again.";
+      case "no-speech":
+        return "I didn’t catch that — click the mic and speak a bit louder.";
+      case "audio-capture":
+        return "No microphone found. Plug one in or check system sound settings.";
+      case "network":
+        return "Speech recognition needs an internet connection in Chrome/Edge (browser limitation). Check you’re online, then retry.";
+      case "aborted":
+        return null;
+      default:
+        return `Mic error (${code || "unknown"}). Try Chrome/Edge on http://127.0.0.1:8000.`;
+    }
+  }
+
+  function showMicStatus(text, isError) {
+    if (!text) return;
+    voiceHint.textContent = text;
+    voiceHint.style.color = isError ? "var(--petal-deep)" : "";
+    if (isError) appendBubble("system", text);
+  }
+
+  async function ensureMicPermission() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      return true;
+    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    stream.getTracks().forEach((t) => t.stop());
+    return true;
+  }
+
   function setupMic() {
     if (!SpeechRecognition) {
       micBtn.disabled = true;
       micBtn.title = "Speech recognition not supported in this browser";
-      voiceHint.textContent = "Tip: use Chrome/Edge for mic input. Flora can still speak replies in most browsers.";
+      voiceHint.textContent = "Mic needs Chrome or Edge. Flora can still speak replies in most browsers.";
+      return;
+    }
+
+    if (!window.isSecureContext) {
+      micBtn.disabled = true;
+      voiceHint.textContent = "Mic only works on https:// or http://127.0.0.1 — open Flora via http://127.0.0.1:8000";
       return;
     }
 
     recognition = new SpeechRecognition();
     recognition.continuous = false;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = navigator.language || "en-US";
 
     recognition.onstart = () => {
       listening = true;
       micBtn.setAttribute("aria-pressed", "true");
       setMood("listening", "Flora is listening to you");
+      showMicStatus("Listening… speak now, then pause.", false);
       stopSpeaking();
     };
 
@@ -243,15 +284,17 @@
       input.value = transcript.trim();
       autoResize();
       const last = event.results[event.results.length - 1];
-      if (last && last.isFinal) {
+      if (last && last.isFinal && transcript.trim()) {
         sendMessage(transcript);
       }
     };
 
-    recognition.onerror = () => {
+    recognition.onerror = (event) => {
       listening = false;
       micBtn.setAttribute("aria-pressed", "false");
       setMood("idle", "Flora is listening");
+      const msg = micErrorMessage(event.error);
+      if (msg) showMicStatus(msg, true);
     };
 
     recognition.onend = () => {
@@ -260,16 +303,30 @@
       if (!busy) setMood("idle", "Flora is listening");
     };
 
-    micBtn.addEventListener("click", () => {
+    micBtn.addEventListener("click", async () => {
       if (busy) return;
       if (listening) {
         recognition.stop();
         return;
       }
       try {
+        await ensureMicPermission();
+      } catch {
+        showMicStatus(
+          "Microphone blocked. Click the lock/tune icon near the URL → allow Microphone → reload.",
+          true
+        );
+        return;
+      }
+      try {
         recognition.start();
       } catch {
-        /* already started */
+        try {
+          recognition.stop();
+          setTimeout(() => recognition.start(), 200);
+        } catch {
+          showMicStatus("Could not start the mic. Refresh the page and try again.", true);
+        }
       }
     });
   }
