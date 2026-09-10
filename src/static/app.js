@@ -69,6 +69,8 @@
     input.style.height = `${Math.min(input.scrollHeight, 140)}px`;
   }
 
+  let pendingSpeech = "";
+
   function preferVoice() {
     const voices = speechSynthesis.getVoices();
     if (!voices.length) return null;
@@ -78,21 +80,50 @@
     return preferred;
   }
 
-  function speak(text) {
+  function speakChunk(text) {
     if (!speakReplies || !canSpeak) return;
-    speechSynthesis.cancel();
     const utter = new SpeechSynthesisUtterance(text);
     const voice = preferVoice();
     if (voice) utter.voice = voice;
-    utter.rate = 1.02;
+    utter.rate = 1.05;
     utter.pitch = 1.08;
     utter.onstart = () => setMood("speaking", "Flora is speaking");
-    utter.onend = () => setMood("happy", "Flora is with you");
+    utter.onend = () => {
+      if (!speechSynthesis.speaking && !pendingSpeech) {
+        setMood("happy", "Flora is with you");
+      }
+    };
     utter.onerror = () => setMood("idle", "Flora is listening");
     speechSynthesis.speak(utter);
   }
 
+  function flushSpeech(force) {
+    if (!speakReplies || !canSpeak) {
+      pendingSpeech = "";
+      return;
+    }
+    let text = pendingSpeech;
+    if (!force) {
+      const match = text.match(/^[\s\S]*?[.!?…](?=\s|$)/);
+      if (!match) return;
+      text = match[0];
+      pendingSpeech = pendingSpeech.slice(text.length);
+    } else {
+      pendingSpeech = "";
+    }
+    text = text.trim();
+    if (text) speakChunk(text);
+  }
+
+  function speak(text) {
+    if (!speakReplies || !canSpeak) return;
+    speechSynthesis.cancel();
+    pendingSpeech = "";
+    speakChunk(text);
+  }
+
   function stopSpeaking() {
+    pendingSpeech = "";
     if (canSpeak) speechSynthesis.cancel();
   }
 
@@ -181,31 +212,71 @@
     autoResize();
     setMood("thinking", "Flora is thinking…");
 
+    const assistantBubble = appendBubble("assistant", "");
+    let full = "";
+
     try {
-      const res = await fetch("/api/chat", {
+      const res = await fetch("/api/chat/stream", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ message }),
       });
-      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
         const detail = data.detail || "Something went wrong talking to Flora.";
+        assistantBubble.remove();
         appendBubble("system", detail);
         setMood("idle", "Flora is listening");
         return;
       }
-      appendBubble("assistant", data.reply);
-      speak(data.reply);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      setMood("speaking", "Flora is answering…");
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop() || "";
+        for (const part of parts) {
+          const line = part.trim();
+          if (!line.startsWith("data:")) continue;
+          let payload;
+          try {
+            payload = JSON.parse(line.slice(5).trim());
+          } catch {
+            continue;
+          }
+          if (payload.error) {
+            assistantBubble.remove();
+            appendBubble("system", payload.error);
+            setMood("idle", "Flora is listening");
+            return;
+          }
+          if (payload.token) {
+            full += payload.token;
+            assistantBubble.textContent = full;
+            messagesEl.scrollTop = messagesEl.scrollHeight;
+            pendingSpeech += payload.token;
+            flushSpeech(false);
+          }
+        }
+      }
+
+      if (!full.trim()) {
+        assistantBubble.textContent = "…";
+      }
+      flushSpeech(true);
       if (!canSpeak || !speakReplies) {
         setMood("happy", "Flora is with you");
-        setTimeout(() => setMood("idle", "Flora is listening"), 2200);
+        setTimeout(() => setMood("idle", "Flora is listening"), 1800);
       }
-      if (data.new_memories && data.new_memories.length) {
-        await refreshMemories();
-      } else {
-        await refreshMemories();
-      }
+      setTimeout(() => { refreshMemories(); }, 1200);
     } catch (err) {
+      assistantBubble.remove();
       appendBubble("system", "Could not reach Flora’s server. Is it running?");
       setMood("idle", "Flora is listening");
     } finally {

@@ -110,6 +110,34 @@ class MemoryStore:
         with self._connect() as conn:
             conn.execute("DELETE FROM messages")
 
+    @staticmethod
+    def looks_memorable(user_text: str) -> bool:
+        """Cheap gate so we skip a second model call on small talk."""
+        text = user_text.lower()
+        if len(text) < 12:
+            return False
+        cues = (
+            "my name",
+            "i'm ",
+            "i am ",
+            "i like",
+            "i love",
+            "i hate",
+            "i prefer",
+            "my goal",
+            "i want",
+            "i'm trying",
+            "i am trying",
+            "my friend",
+            "my partner",
+            "my job",
+            "i work",
+            "i live",
+            "call me",
+            "remember",
+        )
+        return any(cue in text for cue in cues)
+
     async def extract_and_store(
         self,
         user_text: str,
@@ -117,6 +145,10 @@ class MemoryStore:
         client: OllamaClient | None = None,
     ) -> list[dict[str, str]]:
         """Ask the local model for new facts and persist them."""
+        del assistant_text  # extraction is user-text only
+        if not self.looks_memorable(user_text):
+            return []
+
         client = client or OllamaClient()
         prompt = (
             "Extract durable facts about the USER from this USER message only.\n"
@@ -130,6 +162,7 @@ class MemoryStore:
                     {"role": "user", "content": prompt},
                 ],
                 temperature=0.1,
+                num_predict=120,
             )
         except Exception:
             return []

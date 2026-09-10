@@ -51,6 +51,15 @@ python main.py
 
 Open **http://127.0.0.1:8000** in your browser.
 
+## Speed tips
+
+Flora streams replies so you see/hear the first words sooner. Still, local models on CPU can feel slow.
+
+- Prefer a small model: `gemma2:2b` or `phi3` on modest machines
+- Keep Ollama running so the model stays warm (`keep_alive` defaults to 60m)
+- A GPU makes a big difference if you have one
+- Memory extraction no longer blocks chat replies (runs in the background)
+
 ## Talking and listening
 
 | Feature | How |
