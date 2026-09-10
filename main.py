@@ -1,144 +1,136 @@
 #!/usr/bin/env python3
-"""
-Main orchestrator for the Groww Weekly Pulse Multi-Agent System
-Executes the complete pipeline: Extract → Classify → Strategist → Editor → Email
-"""
+"""Flora — fully local personal companion."""
 
-import sys
-import json
-import os
-from datetime import datetime
+from __future__ import annotations
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'src'))
+from contextlib import asynccontextmanager
+from typing import AsyncIterator
 
-from src.graph.graph import create_workflow
-from src.utils.email_sender import send_weekly_pulse_email
-from src.config.settings import settings
+from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel, Field
+
+from src.flora.config import STATIC_DIR, settings
+from src.flora.memory import MemoryStore
+from src.flora.ollama_client import OllamaClient, OllamaError
+from src.flora.persona import build_system_message
 
 
-def main():
-    """
-    Main entry point for the Weekly Pulse pipeline.
-    """
-    print("=" * 70)
-    print("Groww Weekly Pulse - Multi-Agent System")
-    print("=" * 70)
-    print(f"\nExecution Date: {settings.CURRENT_DATE.strftime('%Y-%m-%d')}")
-    print(f"Cutoff Date: {settings.CUTOFF_DATE.strftime('%Y-%m-%d')} (Last {settings.CUTOFF_DAYS} days)")
-    print(f"Target URL: {settings.GROWW_PLAY_STORE_URL}")
-    print("\n" + "-" * 70)
-    print("Starting Pipeline Execution...")
-    print("-" * 70 + "\n")
-    
+store = MemoryStore()
+ollama = OllamaClient()
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    store.db_path.parent.mkdir(parents=True, exist_ok=True)
+    yield
+
+
+app = FastAPI(title="Flora", lifespan=lifespan)
+app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=8000)
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    new_memories: list[dict[str, str]] = []
+
+
+class MemoryCreate(BaseModel):
+    key: str = Field(min_length=1, max_length=80)
+    value: str = Field(min_length=1, max_length=500)
+
+
+@app.get("/")
+async def index() -> FileResponse:
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/api/health")
+async def health() -> dict:
+    ollama_status = await ollama.health()
+    return {
+        "app": "flora",
+        "ok": True,
+        "ollama": ollama_status,
+        "memory_count": len(store.list_memories()),
+    }
+
+
+@app.get("/api/history")
+async def history() -> dict:
+    return {"messages": store.recent_messages()}
+
+
+@app.delete("/api/history")
+async def clear_history() -> dict:
+    store.clear_messages()
+    return {"ok": True}
+
+
+@app.get("/api/memory")
+async def list_memory() -> dict:
+    return {"memories": store.list_memories()}
+
+
+@app.post("/api/memory")
+async def create_memory(body: MemoryCreate) -> dict:
+    store.upsert_memory(body.key, body.value)
+    return {"ok": True, "memories": store.list_memories()}
+
+
+@app.delete("/api/memory/{key}")
+async def delete_memory(key: str) -> dict:
+    if not store.delete_memory(key):
+        raise HTTPException(status_code=404, detail="Memory not found")
+    return {"ok": True, "memories": store.list_memories()}
+
+
+@app.delete("/api/memory")
+async def clear_memory() -> dict:
+    store.clear_memories()
+    return {"ok": True}
+
+
+@app.post("/api/chat", response_model=ChatResponse)
+async def chat(body: ChatRequest) -> ChatResponse:
+    user_text = body.message.strip()
+    if not user_text:
+        raise HTTPException(status_code=400, detail="Message cannot be empty")
+
+    memories = store.list_memories()
+    history = store.recent_messages()
+    messages = [
+        {"role": "system", "content": build_system_message(memories)},
+        *history,
+        {"role": "user", "content": user_text},
+    ]
+
     try:
-        # Create workflow
-        print("Initializing LangGraph workflow...")
-        workflow = create_workflow()
-        print("✓ Workflow initialized\n")
-        
-        # Initialize state
-        initial_state = {
-            'raw_reviews': [],
-            'classified_reviews': [],
-            'top_themes': [],
-            'final_report': '',
-            'errors': []
-        }
-        
-        # Execute workflow
-        print("=" * 70)
-        print("Executing Workflow")
-        print("=" * 70)
-        print("\nAgent 1: Extractor - Extracting reviews from Play Store...")
-        print("Agent 2: Classifier - Classifying reviews into themes...")
-        print("Agent 3: Strategist - Identifying top themes and generating insights...")
-        print("Agent 4: Editor - Formatting final report...\n")
-        
-        # Invoke workflow
-        final_state = workflow.invoke(initial_state)
-        
-        print("\n" + "=" * 70)
-        print("Pipeline Execution Complete")
-        print("=" * 70)
-        
-        # Check for errors
-        errors = final_state.get('errors', [])
-        if errors:
-            print(f"\n⚠ Warnings/Errors ({len(errors)}):")
-            for error in errors:
-                print(f"  - {error}")
-        
-        # Display results
-        raw_reviews_count = len(final_state.get('raw_reviews', []))
-        classified_reviews_count = len(final_state.get('classified_reviews', []))
-        top_themes_count = len(final_state.get('top_themes', []))
-        final_report = final_state.get('final_report', '')
-        
-        print(f"\nResults Summary:")
-        print(f"  - Raw reviews extracted: {raw_reviews_count}")
-        print(f"  - Reviews classified: {classified_reviews_count}")
-        print(f"  - Top themes identified: {top_themes_count}")
-        print(f"  - Final report generated: {'Yes' if final_report else 'No'}")
-        
-        if final_report:
-            from src.agents.editor import count_words
-            word_count = count_words(final_report)
-            print(f"  - Report word count: {word_count} / {settings.MAX_REPORT_WORDS}")
-            
-            print("\n" + "-" * 70)
-            print("Final Report Preview")
-            print("-" * 70)
-            print(final_report[:500] + "..." if len(final_report) > 500 else final_report)
-            print()
-            
-            # Save report to file
-            report_file = 'weekly_pulse_report.txt'
-            with open(report_file, 'w', encoding='utf-8') as f:
-                f.write(final_report)
-            print(f"✓ Report saved to: {report_file}")
-            
-            # Send email
-            print("\n" + "-" * 70)
-            print("Sending Email")
-            print("-" * 70)
-            
-            if settings.GMAIL_APP_PASSWORD:
-                try:
-                    email_sent = send_weekly_pulse_email(final_report)
-                    if email_sent:
-                        print(f"\n✓ Email sent successfully to {settings.RECIPIENT_EMAIL}")
-                    else:
-                        print(f"\n✗ Failed to send email. Check error messages above.")
-                except Exception as e:
-                    print(f"\n✗ Error sending email: {e}")
-            else:
-                print("\n⚠ GMAIL_APP_PASSWORD not configured in .env")
-                print("  Email sending skipped. To enable email, add GMAIL_APP_PASSWORD to .env")
-        
-        else:
-            print("\n⚠ No final report generated. Check errors above.")
-        
-        print("\n" + "=" * 70)
-        print("Execution Complete")
-        print("=" * 70)
-        
-        # Exit with appropriate code
-        if errors:
-            sys.exit(1)  # Exit with error code if there are errors
-        else:
-            sys.exit(0)  # Success
-    
-    except KeyboardInterrupt:
-        print("\n\n⚠ Execution interrupted by user")
-        sys.exit(1)
-    except Exception as e:
-        print(f"\n✗ Fatal error during execution: {e}")
-        import traceback
-        traceback.print_exc()
-        sys.exit(1)
+        reply = await ollama.chat(messages)
+    except OllamaError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+
+    store.add_message("user", user_text)
+    store.add_message("assistant", reply)
+    new_memories = await store.extract_and_store(user_text, reply, ollama)
+    return ChatResponse(reply=reply, new_memories=new_memories)
+
+
+def main() -> None:
+    import uvicorn
+
+    uvicorn.run(
+        "main:app",
+        host=settings.host,
+        port=settings.port,
+        reload=False,
+    )
 
 
 if __name__ == "__main__":
     main()
-
