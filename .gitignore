@@ -13,10 +13,9 @@ ENV/
 .pytest_cache/
 .coverage
 htmlcov/
-weekly_pulse_report.txt
-debug_*
-test_*
-*.json
-*.html
-*.png
 
+# Local Flora data
+data/*.db
+data/*.sqlite
+data/*.sqlite3
+!data/.gitkeep

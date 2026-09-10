@@ -1,217 +1,97 @@
-# Groww Weekly Pulse Multi-Agent System
+# Flora
 
-An automated pipeline that extracts, categorizes, and analyzes user feedback from the Groww Google Play Store page using a 4-agent LangGraph system with Groq LLM integration.
+A fully local personal companion you can talk with every day — free of cost.
 
-## 🎯 Overview
+Flora has a face, remembers key things about you on your machine, and aims to lift your spirits and motivation. Chat by typing or **speaking**; she can **read replies aloud** using your browser’s built-in speech features. No cloud AI bills.
 
-This system automates the process of gathering user feedback from Google Play Store reviews, categorizing them into themes, identifying top problems, and generating actionable insights - all delivered via email in a formatted weekly report.
+## What you need
 
-## 🏗️ Architecture
+1. **Python 3.10+**
+2. **[Ollama](https://ollama.com)** (runs the language model on your computer)
+3. A modern browser (**Chrome or Edge** recommended for microphone input)
 
-The system uses a **4-agent sequential pipeline** orchestrated by LangGraph:
+## Setup
 
-```
-Extractor → Classifier → Strategist → Editor → Email
-```
-
-### Agents
-
-1. **Agent 1: Extractor (The Gatekeeper)**
-   - Navigates to Groww Play Store page
-   - Extracts reviews from the last 60 days
-   - Filters and structures review data
-
-2. **Agent 2: Classifier (The Organizer)**
-   - Classifies reviews into 5 themes using Groq LLM
-   - Themes: Onboarding & Verification, Customer Support, Trading Experience, Statements & Reports, Overall Usability
-
-3. **Agent 3: Strategist (The Analyst)**
-   - Identifies top 3 themes by volume/severity
-   - Generates problem statements, verbatim quotes, and action items
-
-4. **Agent 4: Editor (Compliance & Delivery)**
-   - Anonymizes PII (names, emails)
-   - Formats final report (≤250 words)
-   - Ensures verbatim quotes are complete
-
-## 📋 Prerequisites
-
-- Python 3.9+
-- Playwright browsers installed
-- Groq API key(s) - [Get from Groq Console](https://console.groq.com/keys)
-- Gmail app password (for email sending)
-
-## 🚀 Quick Start
-
-### 1. Clone the Repository
+### 1. Install Ollama and pull a model
 
 ```bash
-git clone <repository-url>
-cd groww-product-reviewer-agent
+# Install from https://ollama.com , then:
+ollama serve
+ollama pull llama3.2
 ```
 
-### 2. Install Dependencies
+Lighter alternatives if your machine is small:
 
 ```bash
+ollama pull phi3
+# or
+ollama pull gemma2:2b
+```
+
+If you use another model, set it when starting Flora:
+
+```bash
+export OLLAMA_MODEL=phi3
+```
+
+### 2. Install Flora
+
+```bash
+cd /path/to/this/repo
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
-playwright install
 ```
 
-### 3. Configure Environment Variables
-
-Copy the example environment file:
+### 3. Run Flora
 
 ```bash
-cp .env.example .env
+python main.py
 ```
 
-Edit `.env` and add your credentials:
+Open **http://127.0.0.1:8000** in your browser.
 
-```env
-# Email Settings
-GMAIL_USER=your_email@gmail.com
-GMAIL_APP_PASSWORD=your_gmail_app_password
-RECIPIENT_EMAIL=recipient@example.com
+## Speed tips
 
-# Groq API Keys
-GROQ_API_KEY_CLASSIFIER=your_groq_api_key_here
-GROQ_API_KEY_STRATEGIST=your_groq_api_key_here
-GROQ_API_KEY_FALLBACK=your_groq_api_key_here
-```
+Flora streams replies so you see/hear the first words sooner. Still, local models on CPU can feel slow.
 
-### 4. Set Up Gmail App Password
+- Prefer a small model: `gemma2:2b` or `phi3` on modest machines
+- Keep Ollama running so the model stays warm (`keep_alive` defaults to 60m)
+- A GPU makes a big difference if you have one
+- Memory extraction no longer blocks chat replies (runs in the background)
 
-1. Enable 2-Step Verification: https://myaccount.google.com/security
-2. Generate App Password: https://myaccount.google.com/apppasswords
-3. Enable IMAP: Gmail Settings → Forwarding and POP/IMAP → Enable IMAP
-4. Add the app password to `.env` file
+## Talking and listening
 
-### 5. Run the Pipeline
+| Feature | How |
+|--------|-----|
+| **Speak to Flora** | Click the mic button and talk. When you pause, your words are sent. |
+| **Hear Flora** | “Voice reply on” (default). She speaks each answer aloud. Toggle off anytime. |
+| **Type** | Works the same as voice — mix both freely. |
 
-```bash
-python3 main.py
-```
+Speech uses the **Web Speech API** in your browser (free, no API keys). Mic access may ask for permission once. Recognition works best in Chromium-based browsers.
 
-The system will:
-1. Extract reviews from Play Store
-2. Classify them into themes
-3. Generate insights for top themes
-4. Format and send the report via email
+### Mic not working?
 
-## 📁 Project Structure
+1. Use **Chrome or Edge** (Firefox often cannot listen).
+2. Open Flora at **http://127.0.0.1:8000** (not a LAN IP / random host).
+3. When prompted, click **Allow** for the microphone (or: lock icon near the URL → Site settings → Microphone → Allow).
+4. Stay **online** — Chrome/Edge speech-to-text uses a browser cloud service (still free; no Flora API key). Hearing Flora aloud works offline.
 
-```
-groww-product-reviewer-agent/
-├── main.py                       # Main entry point
-├── requirements.txt              # Python dependencies
-├── .env.example                  # Environment variables template
-├── .gitignore                    # Git ignore rules
-├── README.md                     # This file
-└── src/
-    ├── agents/
-    │   ├── extractor.py         # Agent 1: Play Store extraction
-    │   ├── classifier.py         # Agent 2: Review classification
-    │   ├── strategist.py         # Agent 3: Insight generation
-    │   └── editor.py             # Agent 4: Report formatting
-    ├── graph/
-    │   ├── state.py              # LangGraph state schema
-    │   └── graph.py              # LangGraph workflow definition
-    ├── config/
-    │   ├── settings.py           # Configuration management
-    │   └── classification_examples.py  # Theme examples
-    └── utils/
-        ├── email_sender.py       # Gmail SMTP email sending
-        ├── pii_detector.py       # PII anonymization
-        └── date_filter.py        # Date filtering utilities
-```
+## Memory
 
-## 🔐 Security
+Flora stores short facts (name, goals, preferences, and so on) in a local SQLite file at `data/flora.db`. Nothing is uploaded. You can forget individual facts or clear everything from the side panel.
 
-**Important:** API keys and passwords are never hardcoded in the source code. They must be configured in the `.env` file:
+## Configuration
 
-- ✅ `.env` file is gitignored (never committed)
-- ✅ All sensitive data loaded from environment variables
-- ✅ No API keys in source code
+Optional environment variables:
 
-**Never commit your `.env` file to version control!**
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | Ollama server |
+| `OLLAMA_MODEL` | `llama3.2` | Model name |
+| `HOST` | `127.0.0.1` | Bind address |
+| `PORT` | `8000` | Web port |
 
-## ⚙️ Configuration
+## Privacy
 
-### Environment Variables
-
-| Variable | Description | Required |
-|----------|-------------|----------|
-| `GMAIL_USER` | Gmail address for sending emails | Yes |
-| `GMAIL_APP_PASSWORD` | Gmail app-specific password | Yes |
-| `RECIPIENT_EMAIL` | Email address to receive reports | Yes |
-| `GROQ_API_KEY_CLASSIFIER` | Groq API key for Classifier agent | Yes |
-| `GROQ_API_KEY_STRATEGIST` | Groq API key for Strategist agent | Yes |
-| `GROQ_API_KEY_FALLBACK` | Fallback Groq API key | No |
-| `GROWW_PLAY_STORE_URL` | Play Store URL (default provided) | No |
-| `CUTOFF_DAYS` | Days to look back for reviews (default: 60) | No |
-
-### API Keys Setup
-
-**Groq API Keys:**
-1. Sign up at [Groq Console](https://console.groq.com/)
-2. Navigate to API Keys section
-3. Create API keys for each agent (or use one for all)
-4. Add keys to `.env` file
-
-**Different API Keys Per Agent:**
-- Recommended for better rate limit management
-- Each agent can use its own Groq API key
-- Fallback key used if primary keys fail
-
-## 📊 Output Format
-
-The system generates a formatted weekly report with:
-
-```
-Groww Weekly Pulse - [Date]
-
-Main Problems identified:
-
-**Problem Theme 1: [Theme Name]**
-
-Major problem identified:
-• Problem statement 1
-• Problem statement 2
-• Problem statement 3
-
-**User Quote**
-[Complete verbatim user quote - never truncated]
-
-Action items:
-• Action item 1
-• Action item 2
-```
-
-The report is:
-- Saved to `weekly_pulse_report.txt`
-- Sent via email to the configured recipient
-- Limited to ~250 words (quotes are always complete)
-
-## 🔧 Technical Details
-
-### Technology Stack
-
-- **LangGraph**: Multi-agent orchestration
-- **Groq (Llama 3.1 8B Instant)**: Fast LLM inference
-- **Playwright**: Headless browser automation
-- **Python-dotenv**: Environment variable management
-- **smtplib**: Email sending via Gmail SMTP
-
-### Classification Themes
-
-1. **Onboarding and Verification**: Account setup, KYC, activation issues
-2. **Customer Support**: Response times, feedback handling
-3. **Trading Experience**: Order execution, slippage, trading features
-4. **Statements & Reports**: P&L reports, data accuracy, technical glitches
-5. **Overall Usability**: UI/UX, navigation, general app experience
-
-```
-
-For issues or questions, please contact the project maintainer @ritikaa26.imp@gmail.com
-
----
+Everything stays on your device: chat history, memories, and model inference via Ollama. Flora is a supportive companion, not a therapist — seek real-world help in a crisis.
