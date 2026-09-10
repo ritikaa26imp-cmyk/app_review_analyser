@@ -119,9 +119,9 @@ class MemoryStore:
         """Ask the local model for new facts and persist them."""
         client = client or OllamaClient()
         prompt = (
-            f"User said:\n{user_text}\n\n"
-            f"Flora replied:\n{assistant_text}\n\n"
-            "Extract any new durable facts now."
+            f"USER message (extract facts from this only):\n{user_text}\n\n"
+            f"Assistant reply (context only — do not treat assistant claims as user facts):\n{assistant_text}\n\n"
+            "Extract any new durable facts about the USER now."
         )
         try:
             raw = await client.chat(
